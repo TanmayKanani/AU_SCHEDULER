@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AU Course Scheduler - Smart schedule generator for Ahmedabad University students. Find clash-free timetables from your selected courses.">
+    <title>AU Course Scheduler | Ahmedabad University</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Animated Background -->
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+    <div class="bg-glow bg-glow-3"></div>
+
+    <!-- Header -->
+    <header id="app-header">
+        <div class="header-content">
+            <div class="logo-group">
+                <img src="au_logo.png" alt="Ahmedabad University" class="au-logo-img" />
+                <div>
+                    <h1 class="logo-text">AU Scheduler</h1>
+                    <p class="logo-sub">Ahmedabad University • Smart Course Planner</p>
+                </div>
+            </div>
+            <div class="header-actions" style="flex-wrap: wrap;">
+                <button class="btn-import" id="btnHelp" title="Help & Information" style="background: var(--bg-surface); border-color: var(--border); color: var(--text-primary);">
+                    ℹ️ Help
+                </button>
+                <button class="btn-export-json" id="btnImportCode" title="Import courses from a friend">
+                    📥 Import Courses
+                </button>
+                <button class="btn-export-json" id="btnShareCode" title="Export your courses">
+                    📋 Export Courses
+                </button>
+                <button class="btn-theme-toggle" id="themeToggle" title="Toggle Dark Mode">
+                    🌙
+                </button>
+                <button class="btn-import" id="btnImport" title="Import courses from AURIS Excel/CSV">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Import AURIS Data
+                </button>
+                <button class="btn-export-json" id="btnExportJSON" title="Export course data as JSON">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    Export
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="app-main">
+        <!-- Dashboard -->
+        <section class="dashboard" id="dashboard">
+            <div class="dash-stats" id="dashStats">
+                <div class="dash-stat-card">
+                    <span class="dash-stat-num" id="statTotal">0</span>
+                    <span class="dash-stat-label">Total Courses</span>
+                </div>
+                <div class="dash-stat-card">
+                    <span class="dash-stat-num" id="statMajor">0</span>
+                    <span class="dash-stat-label">Major Electives</span>
+                </div>
+                <div class="dash-stat-card">
+                    <span class="dash-stat-num" id="statGER">0</span>
+                    <span class="dash-stat-label">GER Courses</span>
+                </div>
+                <div class="dash-stat-card credit-card">
+                    <div class="credit-ring-container">
+                        <svg class="credit-ring" viewBox="0 0 36 36">
+                            <defs>
+                                <linearGradient id="gradient-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#8b5cf6" />
+                                    <stop offset="100%" stop-color="#6366f1" />
+                                </linearGradient>
+                            </defs>
+                            <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path class="ring-fill" id="creditRingFill" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                        <div class="credit-ring-text">
+                            <span class="dash-stat-num" id="statCredits">0</span>
+                            <span class="dash-stat-label" style="font-size: 0.5rem">Credits</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graduation Tracker -->
+            <div class="grad-tracker" id="gradTrackerContainer">
+                <div class="grad-tracker-header">
+                    <span class="grad-title">🎓 Semester Credit Tracker</span>
+                    <div class="grad-inputs">
+                        <label>Target Credits:</label>
+                        <input type="number" id="targetCreditsInput" value="22" min="1" max="40" />
+                    </div>
+                </div>
+                <div class="grad-progress-wrapper">
+                    <div class="grad-progress-bar">
+                        <div class="grad-fill major-fill" id="gradMajorFill" style="width: 0%;"></div>
+                        <div class="grad-fill ger-fill" id="gradGerFill" style="width: 0%;"></div>
+                        <div class="grad-fill free-fill" id="gradFreeFill" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <div class="grad-legend">
+                    <div class="legend-item"><span class="dot major-dot"></span> Major Electives (<span id="lblMajorCreds">0</span>)</div>
+                    <div class="legend-item"><span class="dot ger-dot"></span> GERs (<span id="lblGerCreds">0</span>)</div>
+                    <div class="legend-item"><span class="dot free-dot"></span> Other/Free (<span id="lblFreeCreds">0</span>)</div>
+                    <div class="legend-item" style="margin-left:auto; font-weight:700; color:var(--text-primary);">Total: <span id="lblTotalCreds">0</span> / <span id="lblTargetCreds">22</span></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Selected Courses Panel (collapsible) -->
+        <section class="selected-panel hidden" id="selectedPanel">
+            <div class="selected-panel-header">
+                <h3>📋 Your Selected Courses <span class="selected-count" id="selectedCount">0</span></h3>
+                <button class="btn-generate" id="btnGenerate" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                    Generate Schedules
+                </button>
+            </div>
+            <div class="selected-chips" id="selectedChips">
+                <!-- Selected course chips populated by JS -->
+            </div>
+        </section>
+
+        <!-- Catalog View -->
+        <section class="catalog-section" id="catalogSection">
+            <!-- Filter Bar -->
+            <div class="filter-bar" id="filterBar">
+                <div class="filter-tabs">
+                    <button class="filter-tab active" data-filter="all" id="filterAll">All Courses</button>
+                    <button class="filter-tab" data-filter="major_elective" id="filterMajor">Major Elective</button>
+                    <button class="filter-tab" data-filter="ger" id="filterGER">GER</button>
+                    <button class="filter-tab" data-filter="other" id="filterOther">Other</button>
+                </div>
+                <div class="filter-right">
+                    <div class="search-box" id="searchBox">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                        <input type="text" placeholder="Search courses, faculty..." id="searchInput">
+                    </div>
+                    <div class="school-filter">
+                        <select id="schoolSelect">
+                            <option value="all">All Schools</option>
+                        </select>
+                    </div>
+                    <div class="school-filter">
+                        <select id="gerCategorySelect">
+                            <option value="all">All GER Categories</option>
+                        </select>
+                    </div>
+                    <div class="school-filter">
+                        <select id="creditSelect">
+                            <option value="all">All Credits</option>
+                        </select>
+                    </div>
+                    <div class="time-filter-range">
+                        <label>⏰</label>
+                        <input type="time" id="timeFrom" value="" placeholder="From" title="Start time" />
+                        <span>to</span>
+                        <input type="time" id="timeTo" value="" placeholder="To" title="End time" />
+                        <button class="time-clear-btn" id="timeClear" title="Clear time filter">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Course Grid -->
+            <div class="course-grid" id="courseGrid">
+                <!-- Courses populated by JS -->
+            </div>
+
+            <!-- Empty State -->
+            <div class="empty-state" id="emptyState">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <p id="emptyMessage">Import AURIS data to get started! Click "Import AURIS Data" above.</p>
+            </div>
+        </section>
+
+        <!-- Schedule Results View (hidden by default) -->
+        <section class="schedule-section hidden" id="scheduleSection">
+            <div class="schedule-header">
+                <div class="schedule-actions">
+                    <button class="btn-back" id="btnBack">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                        Back
+                    </button>
+                    <button class="btn-export-img" id="btnExportImg">
+                        📸 Save Image
+                    </button>
+                </div>
+                <div class="schedule-nav">
+                    <button class="nav-arrow" id="prevSchedule" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"/>
+                        </svg>
+                    </button>
+                    <div class="schedule-info">
+                        <span class="schedule-label">Schedule</span>
+                        <span class="schedule-counter" id="scheduleCounter">1 / 1</span>
+                    </div>
+                    <button class="nav-arrow" id="nextSchedule">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="schedule-stats" id="scheduleStats">
+                    <!-- Stats populated by JS -->
+                </div>
+            </div>
+
+            <!-- Timetable -->
+            <div class="timetable-container" id="timetableContainer">
+                <div class="timetable" id="timetable">
+                    <!-- Timetable populated by JS -->
+                </div>
+            </div>
+
+            <!-- Schedule Summary -->
+            <div class="schedule-summary" id="scheduleSummary">
+                <!-- Summary populated by JS -->
+            </div>
+
+            <!-- No valid schedules state & Clash View -->
+            <div class="no-schedule hidden" id="noSchedule">
+                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4" class="no-sched-icon">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                <h3>No Clash-Free Schedules Found</h3>
+                <p>There are conflicting courses in your selection. Check the clash map below to see where the overlaps are happening!</p>
+                
+                <div class="clash-timetable-wrapper">
+                    <div class="timetable" id="clashTimetable">
+                        <!-- Clashing blocks mapped here -->
+                    </div>
+                </div>
+
+                <button class="btn-back-alt" id="btnBackAlt">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                    Modify Selections
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Import School Selector Modal -->
+    <div class="import-modal hidden" id="importModal">
+        <div class="import-modal-content">
+            <h3>📂 Import AURIS Excel/CSV</h3>
+            <p>Which school is this file for?</p>
+            <div class="import-school-buttons">
+                <button class="import-school-btn" data-school="AMSOM">🏢 AMSOM</button>
+                <button class="import-school-btn" data-school="SAS">🔬 SAS</button>
+                <button class="import-school-btn" data-school="SEAS">⚙️ SEAS</button>
+                <button class="import-school-btn" data-school="auto">🔍 Auto-Detect</button>
+            </div>
+            <button class="import-cancel-btn" id="importCancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Course Detail Modal -->
+    <div class="modal-overlay hidden" id="courseModal">
+        <div class="modal-content" id="modalContent">
+            <button class="modal-close" id="modalClose">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+            <div class="modal-body" id="modalBody">
+                <!-- Modal content populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="modal-overlay hidden" id="helpModal">
+        <div class="modal-content help-modal" style="max-width: 600px;">
+            <div class="modal-header" style="margin-bottom: 20px;">
+                <h2 style="font-size: 1.3rem;">ℹ️ How to Use AU Scheduler</h2>
+                <button class="modal-close" id="closeHelpModal" title="Close">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="line-height: 1.6; font-size: 0.9rem; color: var(--text-secondary); padding-right: 10px;">
+                <h3 style="color: var(--text-primary); margin-top: 5px; margin-bottom: 5px;">1. 📊 How to get AURIS Data</h3>
+                <p>To use the scheduler, you need the latest course data from AURIS:</p>
+                <ol style="margin-left: 20px; margin-bottom: 15px; color: var(--text-primary);">
+                    <li>Log in to AURIS and go to the <strong>Course Directory</strong>.</li>
+                    <li>In the filters, select the current semester (e.g., <strong>Monsoon 2026</strong>).</li>
+                    <li>Scroll down to the course list. Below every school (like AMSOM, SAS, etc.), you will see an <strong>"Excel"</strong> or <strong>"CSV"</strong> button.</li>
+                    <li>Click the Excel button to download the list for that school.</li>
+                    <li>Repeat this for all schools you want courses from.</li>
+                    <li>Click <strong>"Import AURIS Data"</strong> in this app and upload those Excel files!</li>
+                </ol>
+
+                <h3 style="color: var(--text-primary); margin-bottom: 5px;">2. 📌 Section Pinning</h3>
+                <p style="margin-bottom: 15px;">When a course has multiple sections (e.g., Section 1, Section 2), you can click <strong>"📌 Pin Section"</strong> on the one you prefer. The scheduler will then strictly prioritize generating timetables that include your pinned section.</p>
+
+                <h3 style="color: var(--text-primary); margin-bottom: 5px;">3. 📥 Import & 📋 Export Courses</h3>
+                <p style="margin-bottom: 15px;">Want to share your perfect schedule with a friend? Click <strong>"📋 Export Courses"</strong> to copy a special code. Your friend can then click <strong>"📥 Import Courses"</strong>, paste your code, and the app will instantly load your exact courses and pinned sections onto their screen!</p>
+                
+                <h3 style="color: var(--text-primary); margin-bottom: 5px;">4. 🎓 Semester Credit Tracker</h3>
+                <p>Set your target credits using the input box on the dashboard. The app will warn you if you try to add courses that exceed your target, ensuring you stay perfectly on track.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast hidden" id="toast">
+        <span id="toastMessage"></span>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="courses.js"></script>
+    <script src="scheduler.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
