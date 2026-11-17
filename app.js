@@ -387,7 +387,7 @@
         if (ALL_COURSES.length === 0) {
             emptyState.classList.remove('hidden');
             courseGrid.classList.add('hidden');
-            emptyMessage.textContent = 'Import AURIS data to get started! Click "Import AURIS Data" above.';
+            emptyMessage.textContent = 'Import AURIS data to get started! Click "Import AURIS" above.';
             return;
         }
 
@@ -444,8 +444,8 @@
                             </div>
                             <div class="section-times">
                                 ${s.schedule.length > 0 ? s.schedule.map(slot => `
-                                    <span class="sec-time-chip">${slot.day} ${slot.startTime}–${slot.endTime}</span>
-                                `).join('') : '<span class="sec-time-chip no-schedule">No schedule</span>'}
+                                    <span class="sec-time-chip"${formatSlotDates(slot) ? ` title="Only ${formatSlotDates(slot)}"` : ''}>${slot.day} ${slot.startTime}–${slot.endTime}${formatSlotDates(slot) ? ` <span class="sec-time-dates">· ${formatSlotDates(slot)}</span>` : ''}</span>
+                                `).join('') : '<span class="sec-time-chip no-schedule">Timings TBA</span>'}
                             </div>
                         </div>
                     `).join('')}
@@ -655,11 +655,14 @@
                         const slotStart = scheduler.timeToMinutes(slot.startTime);
                         if (slot.day === day && slotStart >= t && slotStart < t + 60) {
                             const colorClass = `tt-color-${colorMap[course.id]}`;
-                            blockHtml = `
-                                <div class="tt-block ${colorClass}" title="${course.name} | ${section.name}">
+                            const dates = formatSlotDates(slot);
+                            // += so half-term courses sharing a slot (e.g. Jan–Feb and Mar–Apr) both show
+                            blockHtml += `
+                                <div class="tt-block ${colorClass}" title="${course.name} | ${section.name}${dates ? ` | ${dates}` : ''}">
                                     <span class="tt-block-name">${course.code}</span>
                                     <span class="tt-block-section">${section.name}</span>
                                     <span class="tt-block-room">${slot.startTime}-${slot.endTime}</span>
+                                    ${dates ? `<span class="tt-block-dates">${dates}</span>` : ''}
                                 </div>
                             `;
                         }
@@ -681,7 +684,7 @@
                     <div class="summary-info">
                         <div class="summary-name">${course.code} — ${course.name}</div>
                         <div class="summary-detail">${section.name} • ${course.faculty || 'TBA'} • ${course.credits}cr</div>
-                        <div class="summary-detail">${section.schedule.map(s => `${s.day} ${s.startTime}-${s.endTime}`).join(' | ')}</div>
+                        <div class="summary-detail">${section.schedule.map(s => `${s.day} ${s.startTime}-${s.endTime}${formatSlotDates(s) ? ` (${formatSlotDates(s)})` : ''}`).join(' | ')}</div>
                     </div>
                 </div>
             `;
@@ -744,6 +747,7 @@
                                 <span class="tt-block-name">${b.course.code}</span>
                                 <span class="tt-block-section">${b.section.name}</span>
                                 <span class="tt-block-room">${b.slot.startTime}-${b.slot.endTime}</span>
+                                ${formatSlotDates(b.slot) ? `<span class="tt-block-dates">${formatSlotDates(b.slot)}</span>` : ''}
                             </div>
                         `;
                     }
@@ -788,17 +792,30 @@
                     } else if (ext === 'csv' || ext === 'xlsx' || ext === 'xls') {
                         const data = new Uint8Array(ev.target.result);
                         const workbook = XLSX.read(data, { type: 'array' });
-                        const firstSheetName = workbook.SheetNames[0];
-                        const worksheet = workbook.Sheets[firstSheetName];
-                        const rows = XLSX.utils.sheet_to_json(worksheet);
+                        // Finds the course sheet + header row (works for old AURIS
+                        // exports and the newer AURIS2 "Course Directory" layout)
+                        const { rows } = readCourseRowsFromWorkbook(workbook);
                         result = importCoursesFromExcel(rows, schoolOverride === 'auto' ? null : schoolOverride);
                     } else {
                         showToast(`Unsupported file type: ${ext}`);
                         return;
                     }
 
+                    if (result.success && result.imported === 0 && ext !== 'json') {
+                        showToast('No courses found — is this the AURIS Course Directory export?');
+                        return;
+                    }
+
                     if (result.success) {
-                        showToast(`✅ Imported ${result.count} new courses! (Total: ${result.total})`);
+                        if (ext === 'json') {
+                            showToast(`✅ Imported ${result.count} courses!`);
+                        } else if (result.unreadable && result.unreadable.length > 0) {
+                            console.warn('Timings could not be read for:', result.unreadable);
+                            showToast(`⚠️ Imported ${result.imported} courses, but timings for ${result.unreadable.length} could not be read (${result.unreadable.slice(0, 3).join(', ')}${result.unreadable.length > 3 ? '…' : ''})`);
+                        } else {
+                            const totalNote = result.total !== result.imported ? ` · ${result.total} total` : '';
+                            showToast(`✅ Imported ${result.imported} courses · ${result.timedSections}/${result.sections} sections timed${totalNote}`);
+                        }
                         selectedCourseIds.clear();
                         populateSchoolFilter();
                         populateGERCategoryFilter();
@@ -986,9 +1003,12 @@
 
         // tab-specific actions
         if (name === 'schedule') {
-            const hasSchedules = generatedSchedules.length > 0;
-            $('scheduleEmpty').classList.toggle('hidden', hasSchedules);
-            $('scheduleSection').classList.toggle('hidden', !hasSchedules);
+            // Show results when there are schedules OR when the last generate
+            // found none (the "No Clash-Free Schedules" view with its clash map)
+            const showingClashView = !noSchedule.classList.contains('hidden');
+            const hasResults = generatedSchedules.length > 0 || showingClashView;
+            $('scheduleEmpty').classList.toggle('hidden', hasResults);
+            $('scheduleSection').classList.toggle('hidden', !hasResults);
             renderSavedStrip();
         }
         if (name === 'insights') {
@@ -1076,6 +1096,10 @@
     let compareSelection = []; // array of saved-schedule ids (max 2)
 
     function openSaveModal() {
+        if (generatedSchedules.length === 0) {
+            showToast('No clash-free schedule to save yet — adjust your courses and generate again.');
+            return;
+        }
         const m = $('saveScheduleModal');
         const input = $('saveNameInput');
         const def = `${selectedCourseIds.size} courses · ${new Date().toLocaleDateString('en-IN', {day:'numeric', month:'short'})}`;
@@ -1384,7 +1408,7 @@
                     section.schedule.forEach(slot => {
                         const ss = scheduler.timeToMinutes(slot.startTime);
                         if (slot.day === day && ss >= t && ss < t + 60) {
-                            block = `<div class="tt-block tt-color-${colorMap[course.id]}"><span class="tt-block-name">${course.code}</span><span class="tt-block-section">${section.name}</span></div>`;
+                            block += `<div class="tt-block tt-color-${colorMap[course.id]}"><span class="tt-block-name">${course.code}</span><span class="tt-block-section">${section.name}</span></div>`;
                         }
                     });
                 });
@@ -1667,7 +1691,10 @@
         const dayHeaderH = 56;
         const rowH = 110;
         const footerH = 64;
-        const H = headerH + dayHeaderH + hours * rowH + footerH + PAD * 2;
+        // Course list under the grid: one row for up to 4 courses, else two
+        const legendRows = combo.length > 4 ? 2 : 1;
+        const legendH = 50 + legendRows * 24;
+        const H = headerH + dayHeaderH + hours * rowH + legendH + footerH + PAD * 2;
 
         const canvas = document.createElement('canvas');
         canvas.width = W * DPR;
@@ -1775,43 +1802,75 @@
         // ===== BLOCKS =====
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
+        // Half-term courses can share a weekly slot (different weeks), so give
+        // blocks that overlap in time their own lane instead of drawing on top.
+        const entries = [];
         combo.forEach(({course, section}) => {
-            const cIdx = colorMap[course.id];
-            const c = palette[cIdx];
             section.schedule.forEach(slot => {
                 const dayIdx = DAYS.indexOf(slot.day);
                 if (dayIdx < 0) return;
-                const startMin = scheduler.timeToMinutes(slot.startTime);
-                const endMin = scheduler.timeToMinutes(slot.endTime);
-                const top = gridTop + dayHeaderH + ((startMin - minTime) / 60) * rowH + 4;
-                const height = ((endMin - startMin) / 60) * rowH - 8;
-                const left = gridLeft + timeColW + dayColW * dayIdx + 4;
-                const width = dayColW - 8;
-
-                // Background
-                ctx.fillStyle = c.bg;
-                roundedRect(ctx, left, top, width, height, 8);
-                ctx.fill();
-
-                // Left accent
-                ctx.fillStyle = c.border;
-                ctx.fillRect(left, top, 4, height);
-
-                // Course code
-                ctx.fillStyle = c.text;
-                ctx.font = '700 15px "Geist Mono", monospace';
-                ctx.fillText(course.code, left + 14, top + 14);
-
-                // Course name (wrapped)
-                ctx.font = '500 14px "Newsreader", Georgia, serif';
-                wrapText(ctx, course.name, left + 14, top + 36, width - 24, 18, height > 90 ? 3 : 2);
-
-                // Bottom meta
-                ctx.font = '500 11px "Geist Mono", monospace';
-                ctx.globalAlpha = 0.7;
-                ctx.fillText(`${section.name}  ·  ${slot.startTime}\u2013${slot.endTime}`, left + 14, top + height - 22);
-                ctx.globalAlpha = 1;
+                entries.push({
+                    course, section, slot, dayIdx,
+                    start: scheduler.timeToMinutes(slot.startTime),
+                    end: scheduler.timeToMinutes(slot.endTime),
+                    lane: 0, lanes: 1
+                });
             });
+        });
+        DAYS.forEach((_, dayIdx) => {
+            const dayEntries = entries.filter(e => e.dayIdx === dayIdx).sort((a, b) => a.start - b.start);
+            const laneEnds = [];
+            dayEntries.forEach(e => {
+                let lane = laneEnds.findIndex(end => end <= e.start);
+                if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
+                laneEnds[lane] = e.end;
+                e.lane = lane;
+            });
+            dayEntries.forEach(e => {
+                const overlapping = dayEntries.filter(o => o.start < e.end && e.start < o.end);
+                e.lanes = Math.max(...overlapping.map(o => o.lane)) + 1;
+            });
+        });
+
+        entries.forEach(({course, section, slot, dayIdx, start: startMin, end: endMin, lane, lanes}) => {
+            const c = palette[colorMap[course.id]];
+            const top = gridTop + dayHeaderH + ((startMin - minTime) / 60) * rowH + 4;
+            const height = ((endMin - startMin) / 60) * rowH - 8;
+            const laneW = (dayColW - 8) / lanes;
+            const left = gridLeft + timeColW + dayColW * dayIdx + 4 + lane * laneW;
+            const width = laneW - (lanes > 1 ? 4 : 0);
+
+            // Background
+            ctx.fillStyle = c.bg;
+            roundedRect(ctx, left, top, width, height, 8);
+            ctx.fill();
+
+            // Left accent
+            ctx.fillStyle = c.border;
+            ctx.fillRect(left, top, 4, height);
+
+            // Course code
+            ctx.fillStyle = c.text;
+            ctx.font = '700 15px "Geist Mono", monospace';
+            ctx.fillText(course.code, left + 14, top + 14);
+
+            // Course name (wrapped) — leave room for the date line on half-term slots
+            const dates = formatSlotDates(slot);
+            const nameLines = dates
+                ? Math.max(1, Math.min(3, Math.floor((height - 80) / 18)))
+                : (height > 90 ? 3 : 2);
+            ctx.font = '500 14px "Newsreader", Georgia, serif';
+            wrapText(ctx, course.name, left + 14, top + 36, width - 24, 18, nameLines);
+
+            // Bottom meta
+            ctx.font = '500 11px "Geist Mono", monospace';
+            ctx.globalAlpha = 0.7;
+            const meta = lanes > 1
+                ? `${slot.startTime}\u2013${slot.endTime}`
+                : `${section.name}  ·  ${slot.startTime}\u2013${slot.endTime}`;
+            ctx.fillText(truncText(ctx, meta, width - 20), left + 14, top + height - 22);
+            if (dates) ctx.fillText(truncText(ctx, dates, width - 20), left + 14, top + height - 38);
+            ctx.globalAlpha = 1;
         });
 
         // ===== LEGEND / COURSE LIST under grid =====
@@ -1839,20 +1898,21 @@
             ctx.fillStyle = P.ink;
             ctx.font = '600 12px "Geist Mono", monospace';
             ctx.fillText(course.code, x + 18, y + 2);
-            // Name
-            ctx.fillStyle = P.inkSoft;
-            ctx.font = '500 13px "Newsreader", Georgia, serif';
-            const codeW = ctx.measureText(course.code).width;
-            ctx.font = '400 13px "Newsreader", Georgia, serif';
-            const maxNameW = colW - 24 - codeW - 60;
-            const truncName = truncText(ctx, course.name, maxNameW);
-            ctx.fillText(truncName, x + 18 + codeW + 10, y + 2);
-            // Section + credits
+            const codeW = ctx.measureText(course.code).width; // measured in the code's own font
+            // Section + credits (right-aligned)
+            const meta = `${section.name} · ${course.credits}cr`;
             ctx.fillStyle = P.inkMute;
             ctx.font = '500 11px "Geist Mono", monospace';
+            const metaW = ctx.measureText(meta).width;
             ctx.textAlign = 'right';
-            ctx.fillText(`${section.name} · ${course.credits}cr`, x + colW - 14, y + 2);
+            ctx.fillText(meta, x + colW - 14, y + 2);
             ctx.textAlign = 'left';
+            // Name, truncated so it never runs into the section/credits text
+            ctx.fillStyle = P.inkSoft;
+            ctx.font = '400 13px "Newsreader", Georgia, serif';
+            const maxNameW = colW - 18 - codeW - 10 - metaW - 26;
+            const truncName = truncText(ctx, course.name, maxNameW);
+            ctx.fillText(truncName, x + 18 + codeW + 10, y + 2);
         });
 
         // ===== FOOTER =====

@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,400&family=Geist:wght@300..700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="au_logo.png">
 </head>
 <body>
     <!-- Animated Background -->
@@ -426,6 +427,7 @@
         <div class="import-modal-content">
             <h3>Import AURIS Excel / CSV</h3>
             <p>Which school is this file for?</p>
+            <p style="font-size: 0.8rem; opacity: 0.75; margin-top: -4px;">Newer AURIS exports already list each course's school, so <strong>Auto-Detect</strong> works for them. Your choice is used only for rows without a School column.</p>
             <div class="import-school-buttons">
                 <button class="import-school-btn" data-school="AMSOM">AMSOM</button>
                 <button class="import-school-btn" data-school="SAS">SAS</button>
@@ -465,9 +467,10 @@
                     <h3>1. Get your AURIS data</h3>
                     <ol>
                         <li>Log in to AURIS and open the <strong>Course Directory</strong>.</li>
-                        <li>Select the current semester (e.g. <strong>Monsoon 2026</strong>).</li>
-                        <li>Below each school (AMSOM, SAS, SEAS) click the <strong>Excel</strong> or <strong>CSV</strong> button.</li>
-                        <li>Back here, click <strong>Import AURIS</strong> and upload the file. Repeat for each school you want.</li>
+                        <li>Select the current semester (e.g. <strong>Winter 2027</strong>).</li>
+                        <li>Click the <strong>Excel</strong> or <strong>CSV</strong> export button. (Older AURIS versions export one file per school.)</li>
+                        <li>Back here, click <strong>Import AURIS</strong> and upload the file. If you have one file per school, import each of them.</li>
+                        <li>Half-term and short courses keep their dates (e.g. <em>4 Jan – 19 Feb</em>), so two courses that share a time slot in different halves of the term are <strong>not</strong> treated as a clash.</li>
                     </ol>
                 </section>
 

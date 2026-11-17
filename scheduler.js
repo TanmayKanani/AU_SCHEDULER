@@ -13,14 +13,23 @@ class ScheduleEngine {
         return h * 60 + m;
     }
 
-    // Check if two time slots overlap on the same day
+    // Check if two time slots overlap on the same day (and in the same weeks)
     slotsOverlap(a, b) {
         if (a.day !== b.day) return false;
         const aStart = this.timeToMinutes(a.startTime);
         const aEnd = this.timeToMinutes(a.endTime);
         const bStart = this.timeToMinutes(b.startTime);
         const bEnd = this.timeToMinutes(b.endTime);
-        return aStart < bEnd && bStart < aEnd;
+        return aStart < bEnd && bStart < aEnd && this.datesOverlap(a, b);
+    }
+
+    // Half-term / short courses carry date ranges ({from, to} as "MM-DD").
+    // A slot without dates runs all term, so it overlaps everything.
+    datesOverlap(a, b) {
+        const ra = Array.isArray(a.dates) ? a.dates : [];
+        const rb = Array.isArray(b.dates) ? b.dates : [];
+        if (ra.length === 0 || rb.length === 0) return true;
+        return ra.some(x => rb.some(y => x.from <= y.to && y.from <= x.to));
     }
 
     // Check if a section clashes with any slot in existing schedule
