@@ -1,315 +1,188 @@
-// =================================================================
-// AURIS Course Scraper v2 - Gets ALL pages of ALL school tabs
-// =================================================================
-// 1. Login to AURIS → Course Directory
-// 2. Set Semester filter → Click Submit
-// 3. Press F12 → Console → type "allow pasting" → Enter
-// 4. Paste this ENTIRE script → Enter
-// 5. Wait (may take 5-10 minutes for all schools/pages)
-// 6. Downloads auris_courses.json automatically
-// =================================================================
+// ===== Schedule Generator Engine =====
+// Finds all valid (clash-free) combinations of course sections
 
-(async function scrapeAURIS() {
-    'use strict';
-
-    const ALL_SCRAPED = [];
-    let idCounter = 0;
-
-    console.log('%c🚀 AURIS Scraper v2 — Starting...', 'color: #6366f1; font-size: 16px; font-weight: bold;');
-
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-    // Parse "Tue [08:00 to 09:30] [03-08-2026 to 22-11-2026]"
-    function parseScheduleLine(line) {
-        line = line.trim();
-        if (!line || line.length < 5) return null;
-        const m = line.match(/^(\w{3})\s*\[(\d{2}:\d{2})\s*to\s*(\d{2}:\d{2})\]/);
-        if (m) return { day: m[1], startTime: m[2], endTime: m[3], room: '' };
-        return null;
+class ScheduleEngine {
+    constructor() {
+        this.validSchedules = [];
+        this.maxResults = 200; // Cap results for performance
     }
 
-    // Scrape one expanded course row's child content
-    function scrapeChildRow(childRow, fallbackFaculty) {
-        const text = childRow.textContent || '';
-        const html = childRow.innerHTML || '';
-        let description = '', gerCategory = '', sections = [];
-
-        // Description
-        const descMatch = html.match(/Course Description[\s\S]*?<\/b>\s*([\s\S]*?)(?=<b|<\/td|<\/div|$)/i);
-        if (descMatch) description = descMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 400);
-
-        // GER Category
-        // In AURIS, it's often structured like: <b>GER Category</b><br/>Humanities<br/><b>Schedule</b>
-        // Or it might be empty if not a GER.
-        const gerMatch = text.match(/GER Category\s*\n?([\s\S]*?)(?=Schedule|$)/i);
-        if (gerMatch) gerCategory = gerMatch[1].trim();
-
-        // Schedule with sections
-        const schedMatch = text.match(/Schedule\s*([\s\S]*?)$/i);
-        if (schedMatch) {
-            const lines = schedMatch[1].split('\n').map(l => l.trim()).filter(l => l);
-            let curSection = null;
-
-            for (const line of lines) {
-                // Handle "Section 1 [First Quarter]"
-                const secMatch = line.match(/^Section\s*([\w\s\[\]]+)/i);
-                if (secMatch && !line.includes('to')) { // Avoid matching "to" from schedule lines just in case
-                    if (curSection && curSection.schedule.length > 0) sections.push(curSection);
-                    curSection = {
-                        id: `s${idCounter++}`,
-                        name: `Section ${secMatch[1].trim()}`,
-                        faculty: fallbackFaculty,
-                        schedule: []
-                    };
-                    continue;
-                }
-                const parsed = parseScheduleLine(line);
-                if (parsed) {
-                    if (!curSection) {
-                        curSection = { id: `s${idCounter++}`, name: 'Section 1', faculty: fallbackFaculty, schedule: [] };
-                    }
-                    const isDup = curSection.schedule.some(s => s.day === parsed.day && s.startTime === parsed.startTime && s.endTime === parsed.endTime);
-                    if (!isDup) {
-                        curSection.schedule.push(parsed);
-                    }
-                }
-            }
-            if (curSection && curSection.schedule.length > 0) sections.push(curSection);
-        }
-
-        return { description, gerCategory, sections };
+    // Convert time string "HH:MM" to minutes since midnight
+    timeToMinutes(t) {
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
     }
 
-    // Get school/area tabs
-    function getSchoolTabs() {
-        // Look for nav tabs, pills, or links that represent schools
-        let tabs = document.querySelectorAll('.nav-tabs > li > a, .nav-pills > li > a, [role="tab"]');
-        if (tabs.length === 0) tabs = document.querySelectorAll('.ui-tabs-nav li a');
-        if (tabs.length === 0) tabs = document.querySelectorAll('.card-header-tabs a, .tab-pane');
-        return Array.from(tabs);
+    // Check if two time slots overlap on the same day
+    slotsOverlap(a, b) {
+        if (a.day !== b.day) return false;
+        const aStart = this.timeToMinutes(a.startTime);
+        const aEnd = this.timeToMinutes(a.endTime);
+        const bStart = this.timeToMinutes(b.startTime);
+        const bEnd = this.timeToMinutes(b.endTime);
+        return aStart < bEnd && bStart < aEnd;
     }
 
-    // Scrape ALL pages of a specific DataTable wrapper
-    async function scrapeTable(wrapper, schoolName) {
-        const courses = [];
-        const table = wrapper.querySelector('table');
-        if (!table) return courses;
-
-        // Try to show ALL rows at once
-        let showedAll = false;
-        try {
-            const lenSelect = wrapper.querySelector('select[name$="_length"]');
-            if (lenSelect) {
-                const allOpt = Array.from(lenSelect.options).find(o => o.value === '-1' || o.text.toLowerCase().includes('all'));
-                if (allOpt) {
-                    lenSelect.value = allOpt.value;
-                    lenSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    await sleep(3000);
-                    showedAll = true;
-                    console.log('  📖 Showing ALL rows');
-                }
-            }
-        } catch (e) {}
-
-        // Get total count from info text
-        const infoEl = wrapper.querySelector('.dataTables_info');
-        const totalMatch = infoEl?.textContent?.match(/of\s+(\d+)/);
-        const totalCourses = totalMatch ? parseInt(totalMatch[1]) : 0;
-        console.log(`  📊 Total courses: ${totalCourses || 'unknown'}`);
-
-        // Process current page's rows
-        async function processCurrentRows() {
-            const rows = table.querySelectorAll('tbody > tr:not(.child):not(.dt-hasChild + tr.child)');
-
-            for (const row of rows) {
-                const cells = Array.from(row.querySelectorAll('td'));
-                if (cells.length < 4) continue;
-
-                const cellTexts = cells.map(c => c.textContent.trim());
-
-                // Find course code
-                let courseCode = '', courseName = '', credits = 3, faculty = '';
-                let codeIdx = -1;
-                for (let j = 0; j < cellTexts.length; j++) {
-                    const m = cellTexts[j].match(/^([A-Z]{2,5}\d{2,4})/);
-                    if (m) { courseCode = m[1]; codeIdx = j; break; }
-                }
-                if (!courseCode || codeIdx < 0) continue;
-
-                // Course name is next cell
-                courseName = (cellTexts[codeIdx + 1] || '').split('\n')[0].trim();
-                if (!courseName) continue;
-
-                // Credits
-                for (const t of cellTexts) {
-                    const cm = t.match(/^(\d+\.?\d*)$/);
-                    if (cm && parseFloat(cm[1]) <= 8) { credits = parseFloat(cm[1]); break; }
-                }
-
-                // Faculty (second to last column usually)
-                faculty = (cellTexts[cellTexts.length - 2] || '').replace(/\s+/g, ' ').trim();
-
-                // Expand row for details
-                let description = '', gerCategory = '', sections = [];
-                const expandBtn = cells[0]?.querySelector('*') || cells[0];
-                try {
-                    expandBtn.click();
-                    await sleep(600);
-
-                    const nextRow = row.nextElementSibling;
-                    if (nextRow && nextRow !== row) {
-                        const childInfo = scrapeChildRow(nextRow, faculty);
-                        description = childInfo.description;
-                        gerCategory = childInfo.gerCategory;
-                        sections = childInfo.sections;
-                    }
-
-                    // Collapse back
-                    expandBtn.click();
-                    await sleep(300);
-                } catch (e) {}
-
-                if (sections.length === 0) {
-                    sections = [{ id: `s${idCounter++}`, name: 'Section 1', faculty, schedule: [] }];
-                }
-
-                // Determine type from GER category
-                let courseType = 'regular'; // default
-                const gerLower = (gerCategory || '').toLowerCase();
-                
-                // If it has any text that isn't "not applicable", it's a GER
-                if (gerLower && gerLower !== 'not applicable' && gerLower !== 'na' && gerLower !== 'n/a' && gerLower !== 'none') {
-                    courseType = 'ger';
-                }
-
-                courses.push({
-                    id: `c${idCounter++}`,
-                    code: courseCode,
-                    name: courseName,
-                    credits,
-                    type: courseType,
-                    school: schoolName,
-                    description: description || courseName,
-                    gerCategory: gerCategory || 'Not Applicable',
-                    faculty,
-                    sections
-                });
-
-                console.log(`    ✅ ${courseCode}: ${courseName} (${sections.length} sec)`);
+    // Check if a section clashes with any slot in existing schedule
+    hasClash(section, existingSlots) {
+        for (const slot of section.schedule) {
+            for (const existing of existingSlots) {
+                if (this.slotsOverlap(slot, existing)) return true;
             }
         }
+        return false;
+    }
 
-        if (showedAll) {
-            // All rows visible, just scrape them
-            await processCurrentRows();
-        } else {
-            // Paginate through all pages
-            let pageNum = 1;
-            let hasNext = true;
+    // Generate all valid schedules using backtracking
+    // preferredSections: { courseId -> sectionIndex } from user's radio selection
+    // pinnedSections: Set of section IDs that must be included
+    generate(selectedCourses, preferredSections = {}, pinnedSections = new Set()) {
+        this.validSchedules = [];
+        if (selectedCourses.length === 0) return [];
 
-            while (hasNext) {
-                console.log(`  📄 Page ${pageNum}...`);
-                await processCurrentRows();
+        // Reorder sections so preferred one comes first for each course
+        const coursesWithOrderedSections = selectedCourses.map(course => {
+            const prefIdx = preferredSections[course.id] || 0;
+            let sections = [...course.sections];
+            
+            // If a section is pinned, ONLY try that section
+            const pinned = sections.find(s => pinnedSections.has(s.id));
+            if (pinned) {
+                sections = [pinned];
+            } else if (prefIdx > 0 && prefIdx < sections.length) {
+                const pref = sections.splice(prefIdx, 1)[0];
+                sections.unshift(pref);
+            }
+            return { ...course, sections };
+        });
 
-                // Check for next page button
-                const nextBtn = wrapper.querySelector('.paginate_button.next:not(.disabled)') ||
-                    wrapper.querySelector('.next:not(.disabled)') ||
-                    wrapper.querySelector('[class*="next"]:not(.disabled)');
+        this._backtrack(coursesWithOrderedSections, 0, [], []);
+        // Sort schedules by score (best first)
+        this.validSchedules.sort((a, b) => this.scoreSchedule(b) - this.scoreSchedule(a));
+        return this.validSchedules;
+    }
 
-                if (nextBtn && !nextBtn.classList.contains('disabled')) {
-                    nextBtn.click();
-                    await sleep(2000); // Wait for page to load
-                    pageNum++;
+    _backtrack(courses, courseIdx, currentCombo, occupiedSlots) {
+        if (this.validSchedules.length >= this.maxResults) return;
+
+        if (courseIdx === courses.length) {
+            this.validSchedules.push([...currentCombo]);
+            return;
+        }
+
+        const course = courses[courseIdx];
+        for (const section of course.sections) {
+            if (!this.hasClash(section, occupiedSlots)) {
+                // Choose this section
+                const newSlots = section.schedule.map(s => ({
+                    ...s,
+                    courseId: course.id,
+                    courseName: course.name,
+                    courseCode: course.code,
+                    sectionName: section.name,
+                    faculty: course.faculty || 'TBA',
+                    courseType: course.type || '' // add type for AI
+                }));
+                currentCombo.push({ course, section });
+                occupiedSlots.push(...newSlots);
+
+                this._backtrack(courses, courseIdx + 1, currentCombo, occupiedSlots);
+
+                // Undo
+                currentCombo.pop();
+                occupiedSlots.splice(occupiedSlots.length - newSlots.length, newSlots.length);
+            }
+        }
+    }
+
+    // Score a schedule (higher = better)
+    scoreSchedule(combo) {
+        let score = 0;
+        const allSlots = [];
+        combo.forEach(({ course, section }) => {
+            section.schedule.forEach(s => allSlots.push({...s, courseType: course.type}));
+        });
+
+        // 1. Fewer days with classes = better (+10 per free day)
+        const daysUsed = new Set(allSlots.map(s => s.day));
+        score += (6 - daysUsed.size) * 10;
+
+        // 2. Later start times
+        const daySlots = {};
+        allSlots.forEach(s => {
+            if (!daySlots[s.day]) daySlots[s.day] = [];
+            daySlots[s.day].push(s);
+        });
+        for (const day in daySlots) {
+            const earliest = Math.min(...daySlots[day].map(s => this.timeToMinutes(s.startTime)));
+            if (earliest >= 600) score += 5;  // starts at or after 10:00
+            if (earliest >= 540) score += 3;  // starts at or after 9:00
+        }
+
+        // 3. Fewer gaps between classes = better
+        for (const day in daySlots) {
+            const sorted = daySlots[day].sort((a, b) =>
+                this.timeToMinutes(a.startTime) - this.timeToMinutes(b.startTime)
+            );
+            for (let i = 1; i < sorted.length; i++) {
+                const gap = this.timeToMinutes(sorted[i].startTime) - this.timeToMinutes(sorted[i - 1].endTime);
+                if (gap <= 30) {
+                    score += 5;    // tight schedule
+                } else if (gap <= 60) {
+                    score += 2;
                 } else {
-                    hasNext = false;
+                    score -= 2;              // big gap
                 }
             }
-            console.log(`  ✅ Scraped ${pageNum} pages`);
         }
 
-        return courses;
+        // 4. Even distribution across days
+        const counts = Object.values(daySlots).map(s => s.length);
+        const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
+        const variance = counts.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / counts.length;
+        score -= variance * 3;
+
+        return score;
     }
 
-    // ===== MAIN =====
-    try {
-        // Find EVERY table on the page
-        const allTables = document.querySelectorAll('table');
-        const courseTables = [];
+    // Get schedule statistics
+    getStats(combo) {
+        const allSlots = [];
+        combo.forEach(({ course, section }) => {
+            section.schedule.forEach(s => allSlots.push({ ...s, courseCode: course.code }));
+        });
 
-        // Filter tables that actually contain course data
-        for (const t of allTables) {
-            // Check if any cell matches a typical course code like ABC123 or ABCD1234
-            const hasCourseCode = Array.from(t.querySelectorAll('td')).some(td => /^[A-Z]{2,5}\d{2,4}/.test(td.textContent.trim()));
-            if (hasCourseCode) {
-                // Get the wrapper if it exists, otherwise use the table's parent
-                const wrapper = t.closest('.dataTables_wrapper') || t.parentElement;
-                if (!courseTables.includes(wrapper)) {
-                    courseTables.push(wrapper);
-                }
-            }
-        }
-        
-        if (courseTables.length > 0) {
-            console.log(`%c📚 Found ${courseTables.length} course tables on this page`, 'color: #f59e0b; font-size: 14px;');
+        const daysUsed = new Set(allSlots.map(s => s.day));
+        const totalCredits = combo.reduce((sum, { course }) => sum + course.credits, 0);
 
-            for (let i = 0; i < courseTables.length; i++) {
-                const wrapper = courseTables[i];
-                
-                // Try to find the school name from a heading immediately preceding the table
-                let schoolName = `School ${i+1}`;
-                let prev = wrapper.previousElementSibling || wrapper.parentElement?.previousElementSibling;
-                let attempts = 0;
-                while (prev && attempts < 5) { 
-                    if (['H1', 'H2', 'H3', 'H4', 'H5'].includes(prev.tagName)) {
-                        schoolName = prev.textContent.trim();
-                        break;
-                    }
-                    if (prev.querySelector && prev.querySelector('h1, h2, h3, h4, h5')) {
-                        schoolName = prev.querySelector('h1, h2, h3, h4, h5').textContent.trim();
-                        break;
-                    }
-                    prev = prev.previousElementSibling;
-                    attempts++;
-                }
+        // Calculate total class hours per week
+        let totalMinutes = 0;
+        allSlots.forEach(s => {
+            totalMinutes += this.timeToMinutes(s.endTime) - this.timeToMinutes(s.startTime);
+        });
 
-                console.log(`%c\n📖 [${i + 1}/${courseTables.length}] Extracting table: ${schoolName}`, 'color: #3b82f6; font-size: 14px; font-weight: bold;');
+        // Earliest and latest times
+        let earliest = 1440, latest = 0;
+        allSlots.forEach(s => {
+            earliest = Math.min(earliest, this.timeToMinutes(s.startTime));
+            latest = Math.max(latest, this.timeToMinutes(s.endTime));
+        });
 
-                const courses = await scrapeTable(wrapper, schoolName);
-                ALL_SCRAPED.push(...courses);
-                console.log(`  🎯 Got ${courses.length} courses from this table.`);
-            }
-        } else {
-            console.log('%c❌ No course tables found on this page.', 'color: #ef4444;');
-        }
-
-        // ===== SUMMARY & DOWNLOAD =====
-        console.log(`\n%c✨ DONE! Scraped ${ALL_SCRAPED.length} total courses`, 'color: #10b981; font-size: 16px; font-weight: bold;');
-
-        const bySchool = {};
-        ALL_SCRAPED.forEach(c => { bySchool[c.school] = (bySchool[c.school] || 0) + 1; });
-        Object.entries(bySchool).forEach(([s, n]) => console.log(`   ${s}: ${n} courses`));
-
-        const withSchedule = ALL_SCRAPED.filter(c => c.sections.some(s => s.schedule.length > 0)).length;
-        console.log(`   📅 Courses with schedule data: ${withSchedule}`);
-
-        const blob = new Blob([JSON.stringify(ALL_SCRAPED, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'auris_courses.json';
-        document.body.appendChild(a); a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        console.log('%c📥 Downloaded auris_courses.json!', 'color: #6366f1; font-size: 14px; font-weight: bold;');
-
-    } catch (err) {
-        console.error('❌ Error:', err);
-        if (ALL_SCRAPED.length > 0) {
-            const blob = new Blob([JSON.stringify(ALL_SCRAPED, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob); a.download = 'auris_courses_partial.json';
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            console.log(`Saved ${ALL_SCRAPED.length} partial results`);
-        }
+        return {
+            daysCount: daysUsed.size,
+            totalCredits,
+            totalHours: Math.round(totalMinutes / 60 * 10) / 10,
+            earliestClass: this.minutesToTime(earliest),
+            latestClass: this.minutesToTime(latest),
+            freeDays: DAYS.filter(d => !daysUsed.has(d))
+        };
     }
-})();
+
+    minutesToTime(m) {
+        const h = Math.floor(m / 60);
+        const min = m % 60;
+        return `${h.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+    }
+}
+
+const scheduler = new ScheduleEngine();
